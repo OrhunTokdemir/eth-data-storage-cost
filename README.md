@@ -1,4 +1,6 @@
-# Eth-Data-storage-Test-Rust
+# eth-data-storage-cost
+
+Measures the gas and ETH cost (with live Etherscan prices) of writing data to Ethereum, with a Rust benchmark.
 
 How to store a **~330 KB recursive, aggregated ZK-STARK proof** on Ethereum, permanently and
 cheaply, so it can serve as an artifact for **end-to-end verifiable e-voting**.
