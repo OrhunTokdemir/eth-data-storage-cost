@@ -9,6 +9,13 @@
 - ✅ You **may** read and edit **`.env.example`**. It must only ever contain placeholders or the public Anvil dev key — never a real key.
 - If a task seems to require a secret value, ask the human instead of looking for it.
 
+## Commits & attribution
+
+- **Do not add yourself (or any AI/agent) as an author or contributor.** No `Co-Authored-By:` trailers,
+  no "Generated with …" lines, and no AI attribution in commit messages, PR descriptions, code comments or docs.
+- Commits are authored only by the repo owner's git identity. Never change `user.name` / `user.email`
+  or pass `--author`.
+
 ## Project overview
 
 Benchmarks and implements ways to store a ~330 KB recursive STARK proof on Ethereum
