@@ -25,6 +25,20 @@ Numbers come from `cargo run -p cli -- bench --proof random:330000`. Random byte
 zstd ratio 100% and no zero bytes. ¹ Blob gas is priced at 1 gwei here. Real blob base fees are
 often close to 1 wei, so the blob part is usually negligible.
 
+**Measured with the real 336 KB recursive proof** (`proofs/proof.bin`, zstd -19 → 91.9%) and live
+Etherscan prices on 2026-11-24 (mainnet 0.426 gwei/gas, Sepolia ~21 wei/gas):
+
+| Strategy | Txs | Gas used | Mainnet ETH | Sepolia ETH (test) |
+|---|---:|---:|---:|---:|
+| sstore2 | 8 | 73,822,107 | 0.031427 | 0.0000000016 |
+| calldata | 4 | 13,442,965 | 0.005723 | 0.0000000003 |
+| events | 4 | 13,442,863 | 0.005723 | 0.0000000003 |
+| slots | 22 | 242,396,419 | 0.103192 | 0.0000000051 |
+| blob | 2 | 366,759 + 393,216 blob gas | 0.000549 | 0.000393 (blob gas at the 1 gwei default) |
+| commitment | 1 | 188,382 | 0.000080 | ≈ 0 |
+
+All six read back byte for byte (Roundtrip OK).
+
 **Recommendation for e-voting:**
 
 1. **If the proof must be permanent and readable by contracts** (for example, a verifier contract or
@@ -130,13 +144,20 @@ The gwei→ETH factor (1e-9) is a constant in code. The prices live in
     for each network and uses `SafeGasPrice`, `ProposeGasPrice` or `FastGasPrice` according to
     `live_tier`.
   - **n**: uses `default_gas_price_gwei`.
-  - If the key is missing, the API errors, or `status != "1"`, it prints a warning and uses the
-    default. For Sepolia it first tries `eth_gasPrice` on `SEPOLIA_RPC_URL`, if one is set.
+  - Price sources are tried in this order, and the first one that works wins:
+    1. `module=gastracker&action=gasoracle` gives the safe, propose and fast tiers. **Mainnet only:**
+       Etherscan answers Sepolia with `Missing Or invalid Action name`.
+    2. `module=proxy&action=eth_gasPrice` on the same chain id. This is used for **Sepolia**.
+    3. `eth_gasPrice` on `SEPOLIA_RPC_URL` (Sepolia, if set).
+    4. `default_gas_price_gwei` from the config. A warning is printed only in this case.
 - `--live-gas` / `--no-live-gas` skip the prompt. Non-interactive runs default to *no*.
 - Etherscan's oracle has no blob base fee, so blob gas always uses `default_blob_gas_price_gwei`.
 - Set `eth_usd` to a number to add a **Mainnet USD** column. Sepolia ETH has no market value.
 - The table header shows where each price came from, for example
-  `mainnet 0.497 gwei/gas (Etherscan propose, block 23467872)`.
+  `mainnet 0.426 gwei/gas (Etherscan propose, block 26485314)` or
+  `sepolia 0.0000000210 gwei/gas (Etherscan eth_gasPrice)`. Very small values keep 3 significant
+  digits instead of rounding to 0.
+- If the proof file is missing, the tool exits right away, before asking about gas prices.
 
 ---
 

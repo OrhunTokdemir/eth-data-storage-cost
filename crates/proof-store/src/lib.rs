@@ -35,7 +35,12 @@ pub fn load_proof(spec: &str) -> eyre::Result<Vec<u8>> {
         rand::fill(&mut v[..]);
         Ok(v)
     } else {
-        std::fs::read(spec).map_err(|e| eyre::eyre!("cannot read proof file {spec}: {e}"))
+        std::fs::read(spec).map_err(|e| match e.kind() {
+            std::io::ErrorKind::NotFound => eyre::eyre!(
+                "proof file '{spec}' not found — copy your proof there, pass --proof <path>, or use --proof random:330000"
+            ),
+            _ => eyre::eyre!("cannot read proof file '{spec}': {e}"),
+        })
     }
 }
 

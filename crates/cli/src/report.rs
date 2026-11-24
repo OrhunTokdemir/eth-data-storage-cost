@@ -1,7 +1,7 @@
 //! Human-readable output: one table, gas measured once, priced for mainnet and Sepolia.
 
 use comfy_table::{presets::UTF8_FULL_CONDENSED, Cell, CellAlignment, ContentArrangement, Table};
-use proof_store::{cost::ResolvedPrice, StoreReceipt, Strategy};
+use proof_store::{cost::{fmt_small, ResolvedPrice}, StoreReceipt, Strategy};
 
 #[derive(Clone, Copy, PartialEq)]
 pub enum NetworkFilter {
@@ -55,7 +55,7 @@ pub fn print_header(len: usize, zstd: f64, prices: &[ResolvedPrice], filter: Net
     let p: Vec<String> = prices
         .iter()
         .filter(|p| filter.includes(&p.network))
-        .map(|p| format!("{} {} (blob {:.3} gwei)", p.network, p.describe(), p.blob_gas_price_gwei))
+        .map(|p| format!("{} {} (blob {} gwei)", p.network, p.describe(), fmt_small(p.blob_gas_price_gwei, 3)))
         .collect();
     println!("Gas prices : {}", p.join("  |  "));
     println!("ETH cost   = gas used × gas price (gwei) × 1e-9  (+ blob gas × blob gas price × 1e-9)");
@@ -89,7 +89,7 @@ pub fn print_table(rows: &[BenchRow], prices: &[ResolvedPrice], eth_usd: Option<
         ];
         for n in &nets {
             let eth = n.eth_cost(r.receipt.gas_used, r.receipt.blob_gas_used);
-            row.push(Cell::new(format!("{eth:.6}")));
+            row.push(Cell::new(fmt_small(eth, 6)));
             if n.network == "mainnet" {
                 if let Some(usd) = eth_usd {
                     row.push(Cell::new(format!("${:.2}", eth * usd)));

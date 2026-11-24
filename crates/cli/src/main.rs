@@ -163,8 +163,8 @@ async fn bench(common: Common, strategy: &str, rpc: Option<String>) -> eyre::Res
     } else {
         strategy.split(',').map(str::parse).collect::<eyre::Result<_>>()?
     };
+    let proof = load_proof(&common.proof)?; // fail fast, before asking about gas prices
     let (cfg, prices) = gas_prices(&common).await?;
-    let proof = load_proof(&common.proof)?;
 
     // Gas is identical on every network, so measure once locally and price per network.
     let _anvil; // keep the spawned node alive for the whole run
@@ -202,8 +202,8 @@ async fn bench(common: Common, strategy: &str, rpc: Option<String>) -> eyre::Res
 }
 
 async fn store(common: Common, strategy: Strategy, election: &str, uri: Option<String>) -> eyre::Result<()> {
+    let proof = load_proof(&common.proof)?; // fail fast, before asking about gas prices
     let (cfg, prices) = gas_prices(&common).await?;
-    let proof = load_proof(&common.proof)?;
     let p = env_provider().await?;
     let ctx = Ctx { deployment: Deployment::load(p.get_chain_id().await?)?, provider: p };
     let r = strategy.store(&ctx, election_id(election), &proof, uri.as_deref()).await?;

@@ -8,6 +8,19 @@ use std::{collections::BTreeMap, fmt, path::Path};
 /// 1 gwei = 1e-9 ETH. Fixed by definition; not configurable.
 pub const GWEI_TO_ETH: f64 = 1e-9;
 
+/// Format a small positive number readably: fixed `decimals` places normally, but keep
+/// 3 significant digits when the value would otherwise round to zero (e.g. Sepolia prices).
+pub fn fmt_small(x: f64, decimals: usize) -> String {
+    if x == 0.0 {
+        return "0".to_string();
+    }
+    if x >= 10f64.powi(-(decimals as i32)) {
+        return format!("{x:.decimals$}");
+    }
+    let sig = (-x.log10().floor()) as usize + 2;
+    format!("{x:.sig$}")
+}
+
 /// Which Etherscan gas-oracle field to use when live prices are enabled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -57,6 +70,8 @@ impl PricingConfig {
 pub enum PriceSource {
     /// Etherscan gas oracle (`gastracker/gasoracle`).
     Etherscan { tier: Tier, last_block: u64 },
+    /// Etherscan JSON-RPC proxy `eth_gasPrice` (chains without the gas oracle, e.g. Sepolia).
+    EtherscanProxy,
     /// `eth_gasPrice` from an RPC endpoint (Sepolia fallback).
     Rpc,
     /// `default_gas_price_gwei` from the config file.
@@ -69,6 +84,7 @@ impl fmt::Display for PriceSource {
             PriceSource::Etherscan { tier, last_block } => {
                 write!(f, "Etherscan {tier}, block {last_block}")
             }
+            PriceSource::EtherscanProxy => f.write_str("Etherscan eth_gasPrice"),
             PriceSource::Rpc => f.write_str("RPC eth_gasPrice"),
             PriceSource::Default => f.write_str("default"),
         }
@@ -105,7 +121,7 @@ impl ResolvedPrice {
 
     /// e.g. `0.497 gwei/gas (Etherscan propose, block 23467872)`
     pub fn describe(&self) -> String {
-        format!("{:.3} gwei/gas ({})", self.gas_price_gwei, self.source)
+        format!("{} gwei/gas ({})", fmt_small(self.gas_price_gwei, 3), self.source)
     }
 }
 
@@ -125,6 +141,14 @@ mod tests {
         // 1M gas at 10 gwei = 0.01 ETH; 131072 blob gas at 1 gwei = 0.000131072 ETH
         assert!((p.eth_cost(1_000_000, 0) - 0.01).abs() < 1e-12);
         assert!((p.eth_cost(0, 131_072) - 0.000131072).abs() < 1e-12);
+    }
+
+    #[test]
+    fn small_numbers_stay_visible() {
+        assert_eq!(fmt_small(0.0, 6), "0");
+        assert_eq!(fmt_small(0.030646, 6), "0.030646");
+        assert_eq!(fmt_small(0.000000123, 6), "0.000000123");
+        assert_eq!(fmt_small(0.00000105, 3), "0.00000105");
     }
 
     #[test]

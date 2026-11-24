@@ -84,6 +84,40 @@ pub async fn fetch_etherscan(
     parse_oracle(&body)
 }
 
+/// Parse an Etherscan `proxy/eth_gasPrice` body (`{"jsonrpc":"2.0","id":73,"result":"0x…"}`, hex wei)
+/// into gwei. Error bodies (`{"status":"0","message":"NOTOK","result":"…"}` or a JSON-RPC
+/// `error` object) are returned as errors.
+pub fn parse_proxy_gas_price(body: &str) -> eyre::Result<f64> {
+    let v: serde_json::Value = serde_json::from_str(body)?;
+    if let Some(hex) = v.get("result").and_then(|r| r.as_str()).and_then(|r| r.strip_prefix("0x")) {
+        let wei = u128::from_str_radix(hex, 16)?;
+        return Ok(wei as f64 / 1e9);
+    }
+    let msg = v.get("error").or_else(|| v.get("result")).cloned().unwrap_or(v);
+    eyre::bail!("Etherscan eth_gasPrice failed: {msg}")
+}
+
+/// Current gas price (gwei) via Etherscan's JSON-RPC proxy — works on chains where the
+/// gas oracle is unsupported (e.g. Sepolia). The API key is never included in errors.
+pub async fn fetch_etherscan_gas_price(client: &reqwest::Client, api_key: &str, chain_id: u64) -> eyre::Result<f64> {
+    let resp = client
+        .get(ETHERSCAN_V2)
+        .query(&[
+            ("module", "proxy"),
+            ("action", "eth_gasPrice"),
+            ("chainid", &chain_id.to_string()),
+            ("apikey", api_key),
+        ])
+        .send()
+        .await
+        .map_err(|e| eyre::eyre!("Etherscan request failed: {}", e.without_url()))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| eyre::eyre!("Etherscan read failed: {}", e.without_url()))?;
+    parse_proxy_gas_price(&body)
+}
+
 async fn rpc_gas_price_gwei(url: &str) -> eyre::Result<f64> {
     let p = ProviderBuilder::new().connect_http(url.parse()?);
     let wei = p.get_gas_price().await?;
@@ -117,17 +151,32 @@ pub async fn resolve_prices(cfg: &PricingConfig, opts: &LiveOptions<'_>) -> (Vec
     for (name, net) in &cfg.networks {
         let mut price = ResolvedPrice::from_default(name, net);
         if opts.use_live {
+            // Try each source in order; only warn if all of them fail.
+            let mut errors: Vec<String> = Vec::new();
             let mut done = false;
             if let Some(key) = key {
+                // 1. gas oracle (safe/propose/fast tiers; mainnet only in practice)
                 match fetch_etherscan(&client, key, net.chain_id).await {
                     Ok(o) => {
                         price.gas_price_gwei = o.price(cfg.live_tier);
                         price.source = PriceSource::Etherscan { tier: cfg.live_tier, last_block: o.last_block };
                         done = true;
                     }
-                    Err(e) => warnings.push(format!("{name}: {e}")),
+                    Err(e) => errors.push(format!("gasoracle: {e}")),
+                }
+                // 2. JSON-RPC proxy eth_gasPrice (Sepolia and other chains without the oracle)
+                if !done {
+                    match fetch_etherscan_gas_price(&client, key, net.chain_id).await {
+                        Ok(g) => {
+                            price.gas_price_gwei = g;
+                            price.source = PriceSource::EtherscanProxy;
+                            done = true;
+                        }
+                        Err(e) => errors.push(format!("proxy: {e}")),
+                    }
                 }
             }
+            // 3. user-supplied Sepolia RPC
             if !done && name == "sepolia" {
                 if let Some(url) = opts.sepolia_rpc_url.filter(|u| !u.trim().is_empty()) {
                     match rpc_gas_price_gwei(url).await {
@@ -136,12 +185,13 @@ pub async fn resolve_prices(cfg: &PricingConfig, opts: &LiveOptions<'_>) -> (Vec
                             price.source = PriceSource::Rpc;
                             done = true;
                         }
-                        Err(e) => warnings.push(format!("sepolia RPC gas price failed: {e}")),
+                        Err(e) => errors.push(format!("SEPOLIA_RPC_URL: {e}")),
                     }
                 }
             }
+            // 4. config default
             if !done && key.is_some() {
-                warnings.push(format!("{name}: falling back to default gas price"));
+                warnings.push(format!("{name}: using default gas price ({})", errors.join("; ")));
             }
         }
         out.push(price);
@@ -163,6 +213,14 @@ mod tests {
         assert_eq!(o.price(Tier::Propose), 0.496840168);
         assert_eq!(o.price(Tier::Fast), 0.55411917);
         assert_eq!(o.suggest_base_fee, 0.496839934);
+    }
+
+    #[test]
+    fn parses_proxy_gas_price() {
+        let g = parse_proxy_gas_price(r#"{"jsonrpc":"2.0","id":73,"result":"0x3b9aca00"}"#).unwrap();
+        assert_eq!(g, 1.0);
+        assert!(parse_proxy_gas_price(r#"{"status":"0","message":"NOTOK","result":"Invalid API Key"}"#).is_err());
+        assert!(parse_proxy_gas_price(r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32000,"message":"x"}}"#).is_err());
     }
 
     #[test]
