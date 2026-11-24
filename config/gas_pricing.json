@@ -1,0 +1,16 @@
+{
+  "live_tier": "propose",
+  "eth_usd": null,
+  "networks": {
+    "mainnet": {
+      "chain_id": 1,
+      "default_gas_price_gwei": 10.0,
+      "default_blob_gas_price_gwei": 1.0
+    },
+    "sepolia": {
+      "chain_id": 11155111,
+      "default_gas_price_gwei": 1.0,
+      "default_blob_gas_price_gwei": 1.0
+    }
+  }
+}
