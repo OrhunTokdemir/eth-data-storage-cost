@@ -13,6 +13,8 @@
 
 - **Do not add yourself (or any AI/agent) as an author or contributor.** No `Co-Authored-By:` trailers,
   no "Generated with …" lines, and no AI attribution in commit messages, PR descriptions, code comments or docs.
+- **Never commit, amend, rebase, rewrite history or push without the repo owner's explicit approval
+  for that specific action.** Stage changes, show the diff and the proposed message, then wait.
 - Commits are authored only by the repo owner's git identity. Never change `user.name` / `user.email`
   or pass `--author`.
 
